@@ -3,7 +3,7 @@
  * Plugin Name: VDL Agent
  * Plugin URI: https://github.com/th54230affi-a11y/vdl-agent
  * Description: Agent API pour la gestion à distance des sites VDL (Vente De Liens) - Stats, Liens, Thème, Maintenance
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: VDL Tech
  * Author URI: https://vdl-tech.fr
  * License: GPL v2 or later
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('VDL_AGENT_VERSION', '1.0.0');
+define('VDL_AGENT_VERSION', '1.1.0');
 define('VDL_AGENT_PATH', plugin_dir_path(__FILE__));
 define('VDL_AGENT_URL', plugin_dir_url(__FILE__));
 define('VDL_AGENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
@@ -67,6 +67,7 @@ final class VDL_Agent {
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-maintenance.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-seo.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-content.php';
+        require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-updater.php';
 
         // Admin
         if (is_admin()) {
@@ -94,6 +95,9 @@ final class VDL_Agent {
 
         // Load translations
         add_action('plugins_loaded', array($this, 'load_textdomain'));
+
+        // GitHub auto-updater
+        new VDL_Updater(VDL_AGENT_PLUGIN_BASENAME, VDL_AGENT_VERSION);
     }
 
     /**
