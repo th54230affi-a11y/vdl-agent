@@ -14,30 +14,180 @@ if (!defined('ABSPATH')) {
 class VDL_SEO {
 
     /**
+     * Mapping des meta keys SEO par plugin.
+     * Priorité : VDL own > Rank Math > Yoast > All in One SEO > SEOPress
+     */
+    private static $seo_meta_keys = array(
+        'seo_title' => array(
+            '_vdl_seo_title',
+            'rank_math_title',
+            '_yoast_wpseo_title',
+            '_aioseo_title',
+            '_seopress_titles_title',
+        ),
+        'meta_description' => array(
+            '_vdl_meta_description',
+            'rank_math_description',
+            '_yoast_wpseo_metadesc',
+            '_aioseo_description',
+            '_seopress_titles_desc',
+        ),
+        'focus_keyword' => array(
+            '_vdl_focus_keyword',
+            'rank_math_focus_keyword',
+            '_yoast_wpseo_focuskw',
+            '_aioseo_keyphrases',
+            '_seopress_analysis_target_kw',
+        ),
+        'canonical_url' => array(
+            '_vdl_canonical_url',
+            'rank_math_canonical_url',
+            '_yoast_wpseo_canonical',
+            '_aioseo_canonical_url',
+            '_seopress_robots_canonical',
+        ),
+        'noindex' => array(
+            '_vdl_noindex',
+            'rank_math_robots',
+            '_yoast_wpseo_meta-robots-noindex',
+        ),
+        'nofollow' => array(
+            '_vdl_nofollow',
+            'rank_math_robots',
+            '_yoast_wpseo_meta-robots-nofollow',
+        ),
+        'og_title' => array(
+            '_vdl_og_title',
+            'rank_math_facebook_title',
+            '_yoast_wpseo_opengraph-title',
+        ),
+        'og_description' => array(
+            '_vdl_og_description',
+            'rank_math_facebook_description',
+            '_yoast_wpseo_opengraph-description',
+        ),
+        'og_image' => array(
+            '_vdl_og_image',
+            'rank_math_facebook_image',
+            '_yoast_wpseo_opengraph-image',
+        ),
+        'twitter_title' => array(
+            '_vdl_twitter_title',
+            'rank_math_twitter_title',
+            '_yoast_wpseo_twitter-title',
+        ),
+        'twitter_description' => array(
+            '_vdl_twitter_description',
+            'rank_math_twitter_description',
+            '_yoast_wpseo_twitter-description',
+        ),
+    );
+
+    /**
+     * Get SEO meta value with fallback across multiple SEO plugins.
+     * Returns the first non-empty value found.
+     *
+     * @param int    $post_id  Post ID
+     * @param string $field    Field name (seo_title, meta_description, etc.)
+     * @return string
+     */
+    private static function get_seo_meta($post_id, $field) {
+        if (!isset(self::$seo_meta_keys[$field])) {
+            return '';
+        }
+
+        foreach (self::$seo_meta_keys[$field] as $meta_key) {
+            $value = get_post_meta($post_id, $meta_key, true);
+            if (!empty($value)) {
+                // Rank Math stores robots as serialized array, handle noindex/nofollow
+                if ($meta_key === 'rank_math_robots' && is_array($value)) {
+                    if ($field === 'noindex') {
+                        return in_array('noindex', $value) ? '1' : '';
+                    }
+                    if ($field === 'nofollow') {
+                        return in_array('nofollow', $value) ? '1' : '';
+                    }
+                }
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Detect which SEO plugin is active
+     *
+     * @return string Plugin slug (rank_math, yoast, aioseo, seopress, vdl, none)
+     */
+    private static function detect_seo_plugin() {
+        if (defined('RANK_MATH_VERSION')) return 'rank_math';
+        if (defined('WPSEO_VERSION')) return 'yoast';
+        if (defined('AIOSEO_VERSION')) return 'aioseo';
+        if (defined('SEOPRESS_VERSION')) return 'seopress';
+        return 'vdl';
+    }
+
+    /**
+     * Get the primary meta_key for description based on active SEO plugin
+     *
+     * @return string meta_key to use in SQL queries
+     */
+    private static function get_desc_meta_key() {
+        $plugin = self::detect_seo_plugin();
+        switch ($plugin) {
+            case 'rank_math': return 'rank_math_description';
+            case 'yoast':     return '_yoast_wpseo_metadesc';
+            case 'aioseo':    return '_aioseo_description';
+            case 'seopress':  return '_seopress_titles_desc';
+            default:          return '_vdl_meta_description';
+        }
+    }
+
+    /**
+     * Get the primary meta_key for SEO title based on active SEO plugin
+     *
+     * @return string meta_key to use in SQL queries
+     */
+    private static function get_title_meta_key() {
+        $plugin = self::detect_seo_plugin();
+        switch ($plugin) {
+            case 'rank_math': return 'rank_math_title';
+            case 'yoast':     return '_yoast_wpseo_title';
+            case 'aioseo':    return '_aioseo_title';
+            case 'seopress':  return '_seopress_titles_title';
+            default:          return '_vdl_seo_title';
+        }
+    }
+
+    /**
      * Get SEO status overview
      */
     public static function get_status($request) {
         global $wpdb;
 
+        $desc_key = self::get_desc_meta_key();
+        $title_key = self::get_title_meta_key();
+
         // Count posts without meta description
-        $posts_without_desc = $wpdb->get_var("
+        $posts_without_desc = $wpdb->get_var($wpdb->prepare("
             SELECT COUNT(p.ID)
             FROM {$wpdb->posts} p
-            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_vdl_meta_description'
+            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
             WHERE p.post_status = 'publish'
             AND p.post_type IN ('post', 'page')
             AND (pm.meta_value IS NULL OR pm.meta_value = '')
-        ");
+        ", $desc_key));
 
         // Count posts without title optimization
-        $posts_without_title = $wpdb->get_var("
+        $posts_without_title = $wpdb->get_var($wpdb->prepare("
             SELECT COUNT(p.ID)
             FROM {$wpdb->posts} p
-            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_vdl_seo_title'
+            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
             WHERE p.post_status = 'publish'
             AND p.post_type IN ('post', 'page')
             AND (pm.meta_value IS NULL OR pm.meta_value = '')
-        ");
+        ", $title_key));
 
         // Count posts without featured image
         $posts_without_image = $wpdb->get_var("
@@ -63,22 +213,23 @@ class VDL_SEO {
         $score = $max_issues > 0 ? round((1 - ($issues / $max_issues)) * 100) : 100;
 
         // Get recent issues
-        $recent_issues = $wpdb->get_results("
+        $recent_issues = $wpdb->get_results($wpdb->prepare("
             SELECT p.ID, p.post_title, p.post_type, p.post_date
             FROM {$wpdb->posts} p
-            LEFT JOIN {$wpdb->postmeta} pm1 ON p.ID = pm1.post_id AND pm1.meta_key = '_vdl_meta_description'
+            LEFT JOIN {$wpdb->postmeta} pm1 ON p.ID = pm1.post_id AND pm1.meta_key = %s
             LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_thumbnail_id'
             WHERE p.post_status = 'publish'
             AND p.post_type IN ('post', 'page')
             AND ((pm1.meta_value IS NULL OR pm1.meta_value = '') OR (pm2.meta_value IS NULL OR pm2.meta_value = ''))
             ORDER BY p.post_date DESC
             LIMIT 10
-        ");
+        ", $desc_key));
 
         return rest_ensure_response(array(
-            'success' => true,
-            'score'   => $score,
-            'stats'   => array(
+            'success'    => true,
+            'score'      => $score,
+            'seo_plugin' => self::detect_seo_plugin(),
+            'stats'      => array(
                 'total_content'       => (int) $total_posts,
                 'missing_description' => (int) $posts_without_desc,
                 'missing_seo_title'   => (int) $posts_without_title,
@@ -116,7 +267,7 @@ class VDL_SEO {
         $passed = array();
 
         // Title analysis
-        $seo_title = get_post_meta($post_id, '_vdl_seo_title', true) ?: $post->post_title;
+        $seo_title = self::get_seo_meta($post_id, 'seo_title') ?: $post->post_title;
         $title_length = mb_strlen($seo_title);
 
         if ($title_length < 30) {
@@ -138,7 +289,7 @@ class VDL_SEO {
         }
 
         // Meta description
-        $meta_desc = get_post_meta($post_id, '_vdl_meta_description', true);
+        $meta_desc = self::get_seo_meta($post_id, 'meta_description');
         if (empty($meta_desc)) {
             $issues[] = array(
                 'type'    => 'missing_meta_description',
@@ -277,17 +428,18 @@ class VDL_SEO {
         }
 
         $meta = array(
-            'seo_title'        => get_post_meta($post_id, '_vdl_seo_title', true),
-            'meta_description' => get_post_meta($post_id, '_vdl_meta_description', true),
-            'focus_keyword'    => get_post_meta($post_id, '_vdl_focus_keyword', true),
-            'canonical_url'    => get_post_meta($post_id, '_vdl_canonical_url', true),
-            'noindex'          => get_post_meta($post_id, '_vdl_noindex', true),
-            'nofollow'         => get_post_meta($post_id, '_vdl_nofollow', true),
-            'og_title'         => get_post_meta($post_id, '_vdl_og_title', true),
-            'og_description'   => get_post_meta($post_id, '_vdl_og_description', true),
-            'og_image'         => get_post_meta($post_id, '_vdl_og_image', true),
-            'twitter_title'    => get_post_meta($post_id, '_vdl_twitter_title', true),
-            'twitter_description' => get_post_meta($post_id, '_vdl_twitter_description', true),
+            'seo_title'           => self::get_seo_meta($post_id, 'seo_title'),
+            'meta_description'    => self::get_seo_meta($post_id, 'meta_description'),
+            'focus_keyword'       => self::get_seo_meta($post_id, 'focus_keyword'),
+            'canonical_url'       => self::get_seo_meta($post_id, 'canonical_url'),
+            'noindex'             => self::get_seo_meta($post_id, 'noindex'),
+            'nofollow'            => self::get_seo_meta($post_id, 'nofollow'),
+            'og_title'            => self::get_seo_meta($post_id, 'og_title'),
+            'og_description'      => self::get_seo_meta($post_id, 'og_description'),
+            'og_image'            => self::get_seo_meta($post_id, 'og_image'),
+            'twitter_title'       => self::get_seo_meta($post_id, 'twitter_title'),
+            'twitter_description' => self::get_seo_meta($post_id, 'twitter_description'),
+            'source_plugin'       => self::detect_seo_plugin(),
         );
 
         return rest_ensure_response(array(
@@ -379,7 +531,7 @@ class VDL_SEO {
             $warnings = 0;
 
             // Check meta description
-            $meta_desc = get_post_meta($post->ID, '_vdl_meta_description', true);
+            $meta_desc = self::get_seo_meta($post->ID, 'meta_description');
             if (empty($meta_desc)) $issues++;
 
             // Check featured image
