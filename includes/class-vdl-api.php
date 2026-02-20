@@ -182,6 +182,12 @@ class VDL_API {
             'permission_callback' => array('VDL_Auth', 'check_api_key'),
         ));
 
+        register_rest_route(self::NAMESPACE, '/seo/debug-meta/(?P<id>\d+)', array(
+            'methods'             => 'GET',
+            'callback'            => array('VDL_SEO', 'debug_meta'),
+            'permission_callback' => array('VDL_Auth', 'check_api_key'),
+        ));
+
         register_rest_route(self::NAMESPACE, '/seo/meta/(?P<id>\d+)', array(
             array(
                 'methods'             => 'GET',

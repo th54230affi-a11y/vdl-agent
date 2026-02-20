@@ -509,6 +509,69 @@ class VDL_SEO {
     }
 
     /**
+     * Debug: dump all SEO-related post_meta for a given post.
+     * Temporary endpoint to diagnose meta key issues.
+     */
+    public static function debug_meta($request) {
+        global $wpdb;
+
+        $post_id = (int) $request->get_param('id');
+        $post = get_post($post_id);
+
+        if (!$post) {
+            return new WP_Error('post_not_found', 'Post not found', array('status' => 404));
+        }
+
+        // Get ALL post meta for this post
+        $all_meta = $wpdb->get_results($wpdb->prepare(
+            "SELECT meta_key, meta_value FROM {$wpdb->postmeta} WHERE post_id = %d ORDER BY meta_key",
+            $post_id
+        ));
+
+        // Filter to SEO-related keys
+        $seo_keywords = array('rank_math', 'yoast', 'wpseo', 'aioseo', 'seopress', '_vdl_', 'seo', 'meta_desc', 'focus', 'canonical', 'noindex', 'nofollow', 'og_', 'twitter_');
+        $seo_meta = array();
+        $all_keys = array();
+
+        foreach ($all_meta as $row) {
+            $all_keys[] = $row->meta_key;
+            foreach ($seo_keywords as $keyword) {
+                if (stripos($row->meta_key, $keyword) !== false) {
+                    $value = $row->meta_value;
+                    // Truncate long values
+                    if (strlen($value) > 500) {
+                        $value = substr($value, 0, 500) . '... [truncated]';
+                    }
+                    $seo_meta[$row->meta_key] = $value;
+                    break;
+                }
+            }
+        }
+
+        // Also try get_post_meta for the specific keys we use
+        $our_reads = array();
+        foreach (self::$seo_meta_keys as $field => $keys) {
+            foreach ($keys as $meta_key) {
+                $val = get_post_meta($post_id, $meta_key, true);
+                if ($val !== '' && $val !== false && $val !== null) {
+                    $our_reads[$field . ' (' . $meta_key . ')'] = is_array($val) ? json_encode($val) : (string) $val;
+                }
+            }
+        }
+
+        return rest_ensure_response(array(
+            'success'          => true,
+            'post_id'          => $post_id,
+            'title'            => $post->post_title,
+            'detected_plugin'  => self::detect_seo_plugin(),
+            'seo_related_meta' => $seo_meta,
+            'our_fallback_reads' => $our_reads,
+            'total_meta_keys'  => count($all_keys),
+            'all_meta_keys'    => $all_keys,
+        ));
+    }
+
+    /**
      * Bulk audit posts
      */
     public static function bulk_audit($request) {
