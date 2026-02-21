@@ -164,7 +164,10 @@ class VDL_Updater {
     }
 
     /**
-     * Clean up transient cache after update
+     * Clean up transient cache after update and ensure plugin stays activated.
+     *
+     * WordPress can deactivate the plugin during update if the directory is replaced.
+     * We force re-activation to prevent the plugin from silently disappearing.
      *
      * @param object $upgrader
      * @param array $options
@@ -178,6 +181,15 @@ class VDL_Updater {
             foreach ($options['plugins'] as $plugin) {
                 if ($plugin === $this->plugin_basename) {
                     delete_transient($this->transient_key);
+
+                    // Force re-activation if plugin got deactivated during update
+                    if (!function_exists('is_plugin_active')) {
+                        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+                    }
+                    if (!is_plugin_active($this->plugin_basename)) {
+                        activate_plugin($this->plugin_basename);
+                    }
+
                     break;
                 }
             }
