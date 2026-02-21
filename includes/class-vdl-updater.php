@@ -20,11 +20,6 @@ class VDL_Updater {
     private $github_repo = 'th54230affi-a11y/vdl-agent';
 
     /**
-     * Plugin slug
-     */
-    private $plugin_slug = 'vdl-agent';
-
-    /**
      * Plugin basename (vdl-agent/vdl-agent.php)
      */
     private $plugin_basename;
@@ -67,8 +62,9 @@ class VDL_Updater {
         // Provide plugin info for the update details modal
         add_filter('plugins_api', array($this, 'plugin_info'), 20, 3);
 
-        // Rename extracted folder from GitHub zipball (owner-repo-hash → vdl-agent)
-        add_filter('upgrader_source_selection', array($this, 'fix_source_dir'), 10, 4);
+        // NOTE: Pas de filtre upgrader_source_selection (fix_source_dir).
+        // Le ZIP attache a la release contient deja le bon dossier "vdl-agent/".
+        // On ne touche JAMAIS aux noms de dossiers pendant l'update.
 
         // Clean up after update
         add_action('upgrader_process_complete', array($this, 'after_update'), 10, 2);
@@ -110,7 +106,7 @@ class VDL_Updater {
                     'banners'     => array(),
                     'tested'      => '6.7',
                     'requires'    => '5.8',
-                    'requires_php'=> '7.4',
+                    'requires_php'=> '8.0',
                 );
             }
         }
@@ -132,7 +128,7 @@ class VDL_Updater {
         }
 
         $current_slug = dirname($this->plugin_basename);
-        if (!isset($args->slug) || ($args->slug !== $this->plugin_slug && $args->slug !== $current_slug)) {
+        if (!isset($args->slug) || $args->slug !== $current_slug) {
             return $result;
         }
 
@@ -146,7 +142,7 @@ class VDL_Updater {
 
         $plugin_info = (object) array(
             'name'            => 'VDL Agent',
-            'slug'            => $this->plugin_slug,
+            'slug'            => dirname($this->plugin_basename),
             'version'         => $remote_version,
             'author'          => '<a href="https://vdl-tech.fr">VDL Tech</a>',
             'author_profile'  => 'https://vdl-tech.fr',
@@ -165,50 +161,6 @@ class VDL_Updater {
         );
 
         return $plugin_info;
-    }
-
-    /**
-     * Fix the source directory name after extracting GitHub zipball.
-     *
-     * GitHub zipballs extract to "owner-repo-hash/" but WordPress expects "vdl-agent/".
-     * This filter renames the directory before WordPress moves it.
-     *
-     * @param string $source        File source location (extracted directory path)
-     * @param string $remote_source Remote file source location
-     * @param object $upgrader      WP_Upgrader instance
-     * @param array  $hook_extra    Extra arguments passed to the upgrader
-     * @return string|WP_Error Corrected source path or WP_Error
-     */
-    public function fix_source_dir($source, $remote_source, $upgrader, $hook_extra) {
-        // Only act on our plugin
-        if (
-            !isset($hook_extra['plugin']) ||
-            $hook_extra['plugin'] !== $this->plugin_basename
-        ) {
-            return $source;
-        }
-
-        global $wp_filesystem;
-
-        // Get the CURRENT directory name of the installed plugin
-        // plugin_basename = "vdl-agent-main/vdl-agent.php" or "vdl-agent/vdl-agent.php"
-        $current_dir = dirname($this->plugin_basename);
-        $correct_source = trailingslashit($remote_source) . $current_dir . '/';
-
-        // If the source already has the right name, do nothing
-        if ($source === $correct_source) {
-            return $source;
-        }
-
-        // Rename the extracted directory to match the current install directory
-        if ($wp_filesystem->move($source, $correct_source, true)) {
-            return $correct_source;
-        }
-
-        return new WP_Error(
-            'vdl_updater_rename_failed',
-            'Impossible de renommer le dossier du plugin après extraction.'
-        );
     }
 
     /**
@@ -301,30 +253,30 @@ class VDL_Updater {
     /**
      * Get the ZIP download URL from a release
      *
-     * Prefers a .zip asset if attached, otherwise uses GitHub's auto-generated zipball.
+     * IMPORTANT: On utilise UNIQUEMENT le ZIP attache a la release (vdl-agent.zip).
+     * Ce ZIP contient le dossier "vdl-agent/" correctement nomme.
+     * On n'utilise PAS le zipball GitHub (qui a un nom de dossier imprevisible).
      *
      * @param array $release GitHub release data
      * @return string|false Download URL or false
      */
     private function get_download_url($release) {
-        // Check for attached .zip asset first
         if (!empty($release['assets'])) {
             foreach ($release['assets'] as $asset) {
                 if (
-                    isset($asset['content_type']) &&
-                    $asset['content_type'] === 'application/zip' &&
-                    !empty($asset['browser_download_url'])
+                    !empty($asset['browser_download_url']) &&
+                    (
+                        (isset($asset['content_type']) && $asset['content_type'] === 'application/zip') ||
+                        (isset($asset['name']) && substr($asset['name'], -4) === '.zip')
+                    )
                 ) {
                     return $asset['browser_download_url'];
                 }
             }
         }
 
-        // Fallback to GitHub's auto-generated source zipball
-        if (!empty($release['zipball_url'])) {
-            return $release['zipball_url'];
-        }
-
+        // Pas de ZIP attache = pas d'update possible
+        // On ne fallback PAS sur zipball_url (causerait un mauvais nom de dossier)
         return false;
     }
 

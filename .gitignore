@@ -24,3 +24,9 @@ package-lock.json
 # Composer
 vendor/
 composer.lock
+
+# Release ZIP (genere par release_plugin.py)
+vdl-agent.zip
+
+# Artifacts
+nul
