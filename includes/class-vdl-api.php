@@ -222,6 +222,12 @@ class VDL_API {
             'permission_callback' => array('VDL_Auth', 'check_confirm_token'),
         ));
 
+        register_rest_route(self::NAMESPACE, '/plugins/(?P<slug>[a-z0-9-]+)/activate', array(
+            'methods'             => 'POST',
+            'callback'            => array('VDL_Maintenance', 'activate_plugin'),
+            'permission_callback' => array('VDL_Auth', 'check_confirm_token'),
+        ));
+
         register_rest_route(self::NAMESPACE, '/cache/purge', array(
             'methods'             => 'POST',
             'callback'            => array('VDL_Maintenance', 'purge_cache'),

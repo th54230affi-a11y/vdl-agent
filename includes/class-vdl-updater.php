@@ -166,8 +166,10 @@ class VDL_Updater {
     /**
      * Clean up transient cache after update and ensure plugin stays activated.
      *
-     * WordPress can deactivate the plugin during update if the directory is replaced.
-     * We force re-activation to prevent the plugin from silently disappearing.
+     * WordPress deactivates the plugin during upgrade (removes from active_plugins).
+     * The object cache may still hold the old value, so activate_plugin() alone
+     * can silently fail. We flush caches aggressively and fall back to a direct
+     * database write if needed.
      *
      * @param object $upgrader
      * @param array $options
@@ -182,12 +184,48 @@ class VDL_Updater {
                 if ($plugin === $this->plugin_basename) {
                     delete_transient($this->transient_key);
 
-                    // Force re-activation if plugin got deactivated during update
                     if (!function_exists('is_plugin_active')) {
                         require_once ABSPATH . 'wp-admin/includes/plugin.php';
                     }
+
+                    // Flush object cache so we read the real DB state
+                    wp_cache_delete('active_plugins', 'options');
+                    wp_cache_delete('alloptions', 'options');
+
+                    // Strategy 1: WordPress activate_plugin()
                     if (!is_plugin_active($this->plugin_basename)) {
-                        activate_plugin($this->plugin_basename);
+                        $result = activate_plugin($this->plugin_basename);
+                        if (is_wp_error($result)) {
+                            error_log('[VDL Updater] activate_plugin() failed: ' . $result->get_error_message());
+                        }
+                    }
+
+                    // Flush again and verify
+                    wp_cache_delete('active_plugins', 'options');
+                    wp_cache_delete('alloptions', 'options');
+
+                    if (!is_plugin_active($this->plugin_basename)) {
+                        // Strategy 2: Direct database write
+                        error_log('[VDL Updater] activate_plugin() did not persist, falling back to direct DB write');
+                        $active_plugins = get_option('active_plugins', array());
+                        if (!in_array($this->plugin_basename, $active_plugins)) {
+                            $active_plugins[] = $this->plugin_basename;
+                            sort($active_plugins);
+                            update_option('active_plugins', $active_plugins);
+                        }
+
+                        wp_cache_delete('active_plugins', 'options');
+                        wp_cache_delete('alloptions', 'options');
+
+                        $still_inactive = !in_array(
+                            $this->plugin_basename,
+                            get_option('active_plugins', array())
+                        );
+                        if ($still_inactive) {
+                            error_log('[VDL Updater] CRITICAL: Plugin reactivation failed even with direct DB write');
+                        } else {
+                            error_log('[VDL Updater] Plugin reactivated via direct DB write');
+                        }
                     }
 
                     break;

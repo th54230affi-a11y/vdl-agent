@@ -173,15 +173,15 @@ class VDL_Maintenance {
             return new WP_Error('update_failed', __('Plugin update failed', 'vdl-agent'), array('status' => 500));
         }
 
-        // Force re-activation if plugin was active before update
-        // WordPress deactivates plugins during update; we must reactivate explicitly
+        // Force re-activation if plugin was active before update.
+        // WordPress deactivates plugins during upgrade. We must reactivate
+        // explicitly and flush all caches to ensure it persists.
         $reactivated = false;
-        if ($was_active && !is_plugin_active($plugin_file)) {
-            activate_plugin($plugin_file);
-            $reactivated = true;
+        if ($was_active) {
+            $reactivated = self::force_activate_plugin($plugin_file);
         }
 
-        // Get new version
+        // Get new version from the freshly installed files
         $new_plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
 
         return rest_ensure_response(array(
@@ -189,8 +189,122 @@ class VDL_Maintenance {
             'plugin'      => $slug,
             'new_version' => $new_plugin_data['Version'],
             'reactivated' => $reactivated,
+            'active'      => is_plugin_active($plugin_file),
             'message'     => sprintf(__('Plugin %s updated to version %s', 'vdl-agent'), $new_plugin_data['Name'], $new_plugin_data['Version']),
         ));
+    }
+
+    /**
+     * Force-activate a plugin with multiple fallback strategies.
+     *
+     * Strategy 1: WordPress activate_plugin() with cache flush
+     * Strategy 2: Direct database write into active_plugins option
+     *
+     * @param string $plugin_file Plugin basename (e.g. "vdl-agent/vdl-agent.php")
+     * @return bool True if plugin is active after all attempts
+     */
+    private static function force_activate_plugin($plugin_file) {
+        // Flush object cache so is_plugin_active reads from DB
+        wp_cache_delete('active_plugins', 'options');
+        wp_cache_delete('alloptions', 'options');
+
+        // Strategy 1: Use WordPress activate_plugin()
+        if (!is_plugin_active($plugin_file)) {
+            $activated = activate_plugin($plugin_file);
+            // activate_plugin returns null on success, WP_Error on failure
+            if (is_wp_error($activated)) {
+                error_log('[VDL Agent] activate_plugin() failed: ' . $activated->get_error_message());
+            }
+        }
+
+        // Flush cache again after activation attempt
+        wp_cache_delete('active_plugins', 'options');
+        wp_cache_delete('alloptions', 'options');
+
+        // Check if it worked
+        if (is_plugin_active($plugin_file)) {
+            return true;
+        }
+
+        // Strategy 2: Direct database write
+        error_log('[VDL Agent] activate_plugin() did not persist, falling back to direct DB write');
+        $active_plugins = get_option('active_plugins', array());
+
+        if (!in_array($plugin_file, $active_plugins)) {
+            $active_plugins[] = $plugin_file;
+            sort($active_plugins);
+            update_option('active_plugins', $active_plugins);
+        }
+
+        // Final flush and check
+        wp_cache_delete('active_plugins', 'options');
+        wp_cache_delete('alloptions', 'options');
+
+        $is_active = in_array($plugin_file, get_option('active_plugins', array()));
+        if ($is_active) {
+            error_log('[VDL Agent] Plugin reactivated via direct DB write');
+        } else {
+            error_log('[VDL Agent] CRITICAL: Plugin reactivation failed even with direct DB write');
+        }
+
+        return $is_active;
+    }
+
+    /**
+     * Activate a plugin by slug
+     */
+    public static function activate_plugin($request) {
+        $slug = $request->get_param('slug');
+
+        if (empty($slug)) {
+            return new WP_Error('missing_slug', __('Plugin slug is required', 'vdl-agent'), array('status' => 400));
+        }
+
+        if (!function_exists('get_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        // Find the plugin file
+        $all_plugins = get_plugins();
+        $plugin_file = null;
+
+        foreach ($all_plugins as $file => $data) {
+            if (dirname($file) === $slug || $file === $slug . '.php') {
+                $plugin_file = $file;
+                break;
+            }
+        }
+
+        if (!$plugin_file) {
+            return new WP_Error('plugin_not_found', __('Plugin not found', 'vdl-agent'), array('status' => 404));
+        }
+
+        // Check if already active
+        if (is_plugin_active($plugin_file)) {
+            $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
+            return rest_ensure_response(array(
+                'success' => true,
+                'plugin'  => $slug,
+                'active'  => true,
+                'message' => sprintf(__('Plugin %s is already active', 'vdl-agent'), $plugin_data['Name']),
+            ));
+        }
+
+        // Force activate with cache flush
+        $activated = self::force_activate_plugin($plugin_file);
+        $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
+
+        if ($activated) {
+            return rest_ensure_response(array(
+                'success' => true,
+                'plugin'  => $slug,
+                'active'  => true,
+                'version' => $plugin_data['Version'],
+                'message' => sprintf(__('Plugin %s activated successfully', 'vdl-agent'), $plugin_data['Name']),
+            ));
+        }
+
+        return new WP_Error('activation_failed', __('Plugin activation failed', 'vdl-agent'), array('status' => 500));
     }
 
     /**
