@@ -101,7 +101,7 @@ class VDL_Updater {
 
             if ($download_url) {
                 $transient->response[$this->plugin_basename] = (object) array(
-                    'slug'        => $this->plugin_slug,
+                    'slug'        => dirname($this->plugin_basename),
                     'plugin'      => $this->plugin_basename,
                     'new_version' => $remote_version,
                     'url'         => $release['html_url'],
@@ -131,7 +131,8 @@ class VDL_Updater {
             return $result;
         }
 
-        if (!isset($args->slug) || $args->slug !== $this->plugin_slug) {
+        $current_slug = dirname($this->plugin_basename);
+        if (!isset($args->slug) || ($args->slug !== $this->plugin_slug && $args->slug !== $current_slug)) {
             return $result;
         }
 
@@ -189,15 +190,17 @@ class VDL_Updater {
 
         global $wp_filesystem;
 
-        // Expected correct directory name
-        $correct_source = trailingslashit($remote_source) . $this->plugin_slug . '/';
+        // Get the CURRENT directory name of the installed plugin
+        // plugin_basename = "vdl-agent-main/vdl-agent.php" or "vdl-agent/vdl-agent.php"
+        $current_dir = dirname($this->plugin_basename);
+        $correct_source = trailingslashit($remote_source) . $current_dir . '/';
 
         // If the source already has the right name, do nothing
         if ($source === $correct_source) {
             return $source;
         }
 
-        // Rename the extracted directory
+        // Rename the extracted directory to match the current install directory
         if ($wp_filesystem->move($source, $correct_source, true)) {
             return $correct_source;
         }
