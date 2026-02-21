@@ -145,7 +145,15 @@ class VDL_Admin {
             update_option('vdl_agent_confirm_token', $confirm_token);
         }
 
+        $webhook_secret = VDL_Webhook::get_or_create_secret();
+
         // Handle regenerate
+        if (isset($_POST['vdl_regenerate_webhook_secret']) && wp_verify_nonce($_POST['_wpnonce'], 'vdl_regenerate_keys')) {
+            $webhook_secret = wp_generate_password(32, false);
+            update_option('vdl_agent_webhook_secret', $webhook_secret);
+            add_settings_error('vdl_agent', 'webhook_secret_regenerated', __('Webhook Secret regenerated', 'vdl-agent'), 'success');
+        }
+
         if (isset($_POST['vdl_regenerate_api_key']) && wp_verify_nonce($_POST['_wpnonce'], 'vdl_regenerate_keys')) {
             $api_key = self::generate_key();
             update_option('vdl_agent_api_key', $api_key);
@@ -200,6 +208,27 @@ class VDL_Admin {
                                 <?php wp_nonce_field('vdl_regenerate_keys'); ?>
                                 <button type="submit" name="vdl_regenerate_confirm_token" class="button">
                                     <?php _e('Regenerate Confirm Token', 'vdl-agent'); ?>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php _e('Webhook Secret', 'vdl-agent'); ?></th>
+                        <td>
+                            <div class="vdl-key-field">
+                                <input type="text" readonly value="<?php echo esc_attr($webhook_secret); ?>" class="regular-text code" id="vdl-webhook-secret">
+                                <button type="button" class="button vdl-copy-btn" data-target="vdl-webhook-secret">
+                                    <span class="dashicons dashicons-clipboard"></span>
+                                </button>
+                            </div>
+                            <p class="description">
+                                <?php _e('Used as password for WiseWand webhook connection.', 'vdl-agent'); ?><br>
+                                <?php printf(__('Webhook URL: %s', 'vdl-agent'), '<code>' . esc_html(rest_url('vdl/v1/webhook/wisewand')) . '</code>'); ?>
+                            </p>
+                            <form method="post" style="margin-top: 10px;">
+                                <?php wp_nonce_field('vdl_regenerate_keys'); ?>
+                                <button type="submit" name="vdl_regenerate_webhook_secret" class="button">
+                                    <?php _e('Regenerate Webhook Secret', 'vdl-agent'); ?>
                                 </button>
                             </form>
                         </td>
@@ -273,6 +302,12 @@ class VDL_Admin {
                             <td>POST</td>
                             <td><?php _e('Purge cache', 'vdl-agent'); ?></td>
                             <td>API Key</td>
+                        </tr>
+                        <tr>
+                            <td><code>/webhook/wisewand</code></td>
+                            <td>POST</td>
+                            <td><?php _e('WiseWand webhook — auto-sync SEO meta', 'vdl-agent'); ?></td>
+                            <td>Webhook Secret</td>
                         </tr>
                     </tbody>
                 </table>

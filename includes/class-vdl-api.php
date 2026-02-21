@@ -274,6 +274,15 @@ class VDL_API {
             'callback'            => array('VDL_Content', 'list_categories'),
             'permission_callback' => array('VDL_Auth', 'check_api_key'),
         ));
+
+        // ===================
+        // WEBHOOK ENDPOINTS
+        // ===================
+        register_rest_route(self::NAMESPACE, '/webhook/wisewand', array(
+            'methods'             => 'POST',
+            'callback'            => array('VDL_Webhook', 'handle_wisewand'),
+            'permission_callback' => array('VDL_Webhook', 'check_webhook_auth'),
+        ));
     }
 
     /**

@@ -3,7 +3,7 @@
  * Plugin Name: VDL Agent
  * Plugin URI: https://github.com/th54230affi-a11y/vdl-agent
  * Description: Agent API pour la gestion à distance des sites VDL (Vente De Liens) - Stats, Liens, Thème, Maintenance
- * Version: 1.4.2
+ * Version: 1.4.3
  * Author: VDL Tech
  * Author URI: https://vdl-tech.fr
  * License: GPL v2 or later
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('VDL_AGENT_VERSION', '1.4.2');
+define('VDL_AGENT_VERSION', '1.4.3');
 define('VDL_AGENT_PATH', plugin_dir_path(__FILE__));
 define('VDL_AGENT_URL', plugin_dir_url(__FILE__));
 define('VDL_AGENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
@@ -67,6 +67,7 @@ final class VDL_Agent {
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-maintenance.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-seo.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-content.php';
+        require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-webhook.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-updater.php';
 
         // Admin
@@ -112,6 +113,11 @@ final class VDL_Agent {
         // Generate confirm token if not exists
         if (!get_option('vdl_agent_confirm_token')) {
             update_option('vdl_agent_confirm_token', wp_generate_password(16, false));
+        }
+
+        // Generate webhook secret if not exists
+        if (!get_option('vdl_agent_webhook_secret')) {
+            update_option('vdl_agent_webhook_secret', wp_generate_password(32, false));
         }
 
         // Create stats table if needed (uses theme's table)
