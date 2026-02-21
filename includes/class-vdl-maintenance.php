@@ -159,6 +159,9 @@ class VDL_Maintenance {
         $skin = new WP_Ajax_Upgrader_Skin();
         $upgrader = new Plugin_Upgrader($skin);
 
+        // Remember if plugin was active before update
+        $was_active = is_plugin_active($plugin_file);
+
         // Perform the update
         $result = $upgrader->upgrade($plugin_file);
 
@@ -170,6 +173,14 @@ class VDL_Maintenance {
             return new WP_Error('update_failed', __('Plugin update failed', 'vdl-agent'), array('status' => 500));
         }
 
+        // Force re-activation if plugin was active before update
+        // WordPress deactivates plugins during update; we must reactivate explicitly
+        $reactivated = false;
+        if ($was_active && !is_plugin_active($plugin_file)) {
+            activate_plugin($plugin_file);
+            $reactivated = true;
+        }
+
         // Get new version
         $new_plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
 
@@ -177,6 +188,7 @@ class VDL_Maintenance {
             'success'     => true,
             'plugin'      => $slug,
             'new_version' => $new_plugin_data['Version'],
+            'reactivated' => $reactivated,
             'message'     => sprintf(__('Plugin %s updated to version %s', 'vdl-agent'), $new_plugin_data['Name'], $new_plugin_data['Version']),
         ));
     }
