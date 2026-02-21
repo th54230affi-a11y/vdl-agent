@@ -452,7 +452,78 @@ class VDL_SEO {
     }
 
     /**
-     * Update meta data for a post
+     * Get the write meta key for a given field, based on the active SEO plugin.
+     * Writes directly into the active plugin's meta keys so they are recognized.
+     *
+     * @param string $field Field name (seo_title, meta_description, etc.)
+     * @return string meta_key to write to
+     */
+    private static function get_write_meta_key($field) {
+        $plugin = self::detect_seo_plugin();
+
+        $map = array(
+            'rank_math' => array(
+                'seo_title'           => 'rank_math_title',
+                'meta_description'    => 'rank_math_description',
+                'focus_keyword'       => 'rank_math_focus_keyword',
+                'canonical_url'       => 'rank_math_canonical_url',
+                'og_title'            => 'rank_math_facebook_title',
+                'og_description'      => 'rank_math_facebook_description',
+                'og_image'            => 'rank_math_facebook_image',
+                'twitter_title'       => 'rank_math_twitter_title',
+                'twitter_description' => 'rank_math_twitter_description',
+            ),
+            'yoast' => array(
+                'seo_title'           => '_yoast_wpseo_title',
+                'meta_description'    => '_yoast_wpseo_metadesc',
+                'focus_keyword'       => '_yoast_wpseo_focuskw',
+                'canonical_url'       => '_yoast_wpseo_canonical',
+                'og_title'            => '_yoast_wpseo_opengraph-title',
+                'og_description'      => '_yoast_wpseo_opengraph-description',
+                'og_image'            => '_yoast_wpseo_opengraph-image',
+                'twitter_title'       => '_yoast_wpseo_twitter-title',
+                'twitter_description' => '_yoast_wpseo_twitter-description',
+            ),
+            'aioseo' => array(
+                'seo_title'           => '_aioseo_title',
+                'meta_description'    => '_aioseo_description',
+                'focus_keyword'       => '_aioseo_keyphrases',
+                'canonical_url'       => '_aioseo_canonical_url',
+            ),
+            'seopress' => array(
+                'seo_title'           => '_seopress_titles_title',
+                'meta_description'    => '_seopress_titles_desc',
+                'focus_keyword'       => '_seopress_analysis_target_kw',
+                'canonical_url'       => '_seopress_robots_canonical',
+            ),
+        );
+
+        if (isset($map[$plugin][$field])) {
+            return $map[$plugin][$field];
+        }
+
+        // Fallback to VDL own keys
+        $vdl_keys = array(
+            'seo_title'           => '_vdl_seo_title',
+            'meta_description'    => '_vdl_meta_description',
+            'focus_keyword'       => '_vdl_focus_keyword',
+            'canonical_url'       => '_vdl_canonical_url',
+            'noindex'             => '_vdl_noindex',
+            'nofollow'            => '_vdl_nofollow',
+            'og_title'            => '_vdl_og_title',
+            'og_description'      => '_vdl_og_description',
+            'og_image'            => '_vdl_og_image',
+            'twitter_title'       => '_vdl_twitter_title',
+            'twitter_description' => '_vdl_twitter_description',
+        );
+
+        return isset($vdl_keys[$field]) ? $vdl_keys[$field] : '_vdl_' . $field;
+    }
+
+    /**
+     * Update meta data for a post.
+     * Writes into the active SEO plugin's meta keys (Rank Math, Yoast, etc.)
+     * so they are properly recognized by the plugin.
      */
     public static function update_meta($request) {
         $post_id = (int) $request->get_param('id');
@@ -462,37 +533,33 @@ class VDL_SEO {
             return new WP_Error('post_not_found', __('Post not found', 'vdl-agent'), array('status' => 404));
         }
 
-        $allowed_meta = array(
-            'seo_title'        => '_vdl_seo_title',
-            'meta_description' => '_vdl_meta_description',
-            'focus_keyword'    => '_vdl_focus_keyword',
-            'canonical_url'    => '_vdl_canonical_url',
-            'noindex'          => '_vdl_noindex',
-            'nofollow'         => '_vdl_nofollow',
-            'og_title'         => '_vdl_og_title',
-            'og_description'   => '_vdl_og_description',
-            'og_image'         => '_vdl_og_image',
-            'twitter_title'    => '_vdl_twitter_title',
-            'twitter_description' => '_vdl_twitter_description',
+        $allowed_fields = array(
+            'seo_title', 'meta_description', 'focus_keyword', 'canonical_url',
+            'noindex', 'nofollow', 'og_title', 'og_description', 'og_image',
+            'twitter_title', 'twitter_description',
         );
 
         $updated = array();
+        $plugin = self::detect_seo_plugin();
 
-        foreach ($allowed_meta as $param => $meta_key) {
-            $value = $request->get_param($param);
+        foreach ($allowed_fields as $field) {
+            $value = $request->get_param($field);
             if ($value !== null) {
-                if ($param === 'canonical_url' && !empty($value)) {
+                // Sanitize
+                if (in_array($field, array('canonical_url', 'og_image')) && !empty($value)) {
                     $value = esc_url_raw($value);
-                } elseif ($param === 'og_image' && !empty($value)) {
-                    $value = esc_url_raw($value);
-                } elseif (in_array($param, array('noindex', 'nofollow'))) {
+                } elseif (in_array($field, array('noindex', 'nofollow'))) {
                     $value = $value ? '1' : '';
                 } else {
                     $value = sanitize_text_field($value);
                 }
 
+                $meta_key = self::get_write_meta_key($field);
                 update_post_meta($post_id, $meta_key, $value);
-                $updated[$param] = $value;
+                $updated[$field] = array(
+                    'value'    => $value,
+                    'meta_key' => $meta_key,
+                );
             }
         }
 
@@ -501,10 +568,11 @@ class VDL_SEO {
         }
 
         return rest_ensure_response(array(
-            'success' => true,
-            'post_id' => $post_id,
-            'updated' => $updated,
-            'message' => __('SEO meta updated successfully', 'vdl-agent'),
+            'success'    => true,
+            'post_id'    => $post_id,
+            'seo_plugin' => $plugin,
+            'updated'    => $updated,
+            'message'    => __('SEO meta updated successfully', 'vdl-agent'),
         ));
     }
 
