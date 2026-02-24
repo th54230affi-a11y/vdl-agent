@@ -282,6 +282,11 @@ class VDL_API {
         ));
 
         // ===================
+        // GEO ENDPOINTS
+        // ===================
+        VDL_GEO::register_routes(self::NAMESPACE);
+
+        // ===================
         // WEBHOOK ENDPOINTS
         // ===================
         register_rest_route(self::NAMESPACE, '/webhook/wisewand', array(

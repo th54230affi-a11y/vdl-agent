@@ -3,7 +3,7 @@
  * Plugin Name: VDL Agent
  * Plugin URI: https://github.com/th54230affi-a11y/vdl-agent
  * Description: Agent API pour la gestion à distance des sites VDL (Vente De Liens) - Stats, Liens, Thème, Maintenance
- * Version: 1.4.5
+ * Version: 1.5.0
  * Author: VDL Tech
  * Author URI: https://vdl-tech.fr
  * License: GPL v2 or later
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('VDL_AGENT_VERSION', '1.4.5');
+define('VDL_AGENT_VERSION', '1.5.0');
 define('VDL_AGENT_PATH', plugin_dir_path(__FILE__));
 define('VDL_AGENT_URL', plugin_dir_url(__FILE__));
 define('VDL_AGENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
@@ -68,6 +68,7 @@ final class VDL_Agent {
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-seo.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-content.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-webhook.php';
+        require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-geo.php';
         require_once VDL_AGENT_PLUGIN_DIR . 'includes/class-vdl-updater.php';
 
         // Admin
@@ -97,6 +98,12 @@ final class VDL_Agent {
         // Load translations
         add_action('plugins_loaded', array($this, 'load_textdomain'));
 
+        // GEO (Generative Engine Optimization)
+        VDL_GEO::init();
+
+        // Flush rewrite rules once after plugin update (for llms.txt route)
+        add_action('admin_init', array($this, 'maybe_flush_rewrites'));
+
         // GitHub auto-updater
         new VDL_Updater(VDL_AGENT_PLUGIN_BASENAME, VDL_AGENT_VERSION);
     }
@@ -123,7 +130,7 @@ final class VDL_Agent {
         // Create stats table if needed (uses theme's table)
         $this->maybe_create_tables();
 
-        // Flush rewrite rules
+        // Flush rewrite rules (needed for llms.txt route)
         flush_rewrite_rules();
     }
 
@@ -196,6 +203,18 @@ final class VDL_Agent {
             false,
             dirname(VDL_AGENT_PLUGIN_BASENAME) . '/languages'
         );
+    }
+
+    /**
+     * Flush rewrite rules once after a version change (e.g., after update).
+     * Needed so that new rewrite rules (like /llms.txt) take effect.
+     */
+    public function maybe_flush_rewrites() {
+        $stored = get_option('vdl_agent_version', '0');
+        if (version_compare($stored, VDL_AGENT_VERSION, '<')) {
+            flush_rewrite_rules();
+            update_option('vdl_agent_version', VDL_AGENT_VERSION);
+        }
     }
 
     /**
